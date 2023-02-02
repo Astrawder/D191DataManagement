@@ -1,0 +1,99 @@
+-- Business Question: Total sales per staff member
+
+-- CREATE detailed table
+
+DROP TABLE IF EXISTS detailed;
+CREATE TABLE detailed ( 
+	rental_id integer,
+	rental_date timestamp,
+	return_date timestamp,
+	store_id integer,
+	staff_id integer,
+	first_name varchar(45),
+	last_name varchar(45),
+	email varchar(90)
+)
+
+-- To view empty detailed table
+-- SELECT * FROM detailed;
+
+-- CREATE summary table
+
+DROP TABLE IF EXISTS summary;
+CREATE TABLE summary (
+	staff_full_name varchar(90),
+	email varchar(90),
+	sales_per_staff integer
+)
+
+-- To view empty summary table
+-- SELECT * FROM summary;
+
+-- Extract raw data from database into detailed table
+
+INSERT INTO detailed(rental_id, rental_date, return_date, store_id, staff_id, first_name, last_name, email)
+SELECT r.rental_id, r.rental_date, r.return_date, s.store_id, r.staff_id, s.first_name, s.last_name, s.email FROM rental AS r
+JOIN staff AS s ON r.staff_id = s.staff_id;
+
+-- To view contents of detailed table
+-- SELECT * FROM detailed;
+
+-- CREATE FUNCTION refreshing the summary table with data transformations
+-- Transform first_name and last_name with concatenation into staff_full_name
+-- Transform staff_id using aggregation to COUNT the staff IDs associated with each rental transaction
+
+CREATE FUNCTION summary_transform()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+DELETE FROM summary;
+
+INSERT INTO summary(
+	SELECT concat_ws(' ', first_name, last_name) AS staff_full_name, email, COUNT(staff_id) AS sales_per_staff FROM detailed
+	GROUP BY staff_id, staff_full_name, email
+);
+
+RETURN NEW;
+END;$$
+
+
+-- CREATE TRIGGER
+
+CREATE TRIGGER summary_transform_trigger
+AFTER INSERT 
+ON detailed
+FOR EACH STATEMENT
+EXECUTE PROCEDURE summary_transform();
+
+
+-- CREATE STORED PROCEDURE
+-- To be automated to run every 6-12 months for performance evaulation purposes
+-- Use pgAgent as an external scheduler for running the procedure
+
+CREATE PROCEDURE refresh_data()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+
+DELETE FROM detailed;
+
+INSERT INTO detailed(store_id, rental_id, rental_date, return_date, staff_id, first_name, last_name, email)
+SELECT s.store_id, r.rental_id, r.rental_date, r.return_date, r.staff_id, s.first_name, s.last_name, s.email FROM rental AS r
+JOIN staff AS s ON r.staff_id = s.staff_id;
+
+END;$$
+
+-- To call the stored procedure
+-- CALL refresh_data();
+
+
+-- For verification run this code and compare with the results in the summary table to verify accuracy of each staff member's total sales
+
+SELECT staff_id, COUNT(staff_id), FROM rental
+GROUP BY staff_id;
+
+-- To view results
+-- SELECT * FROM detailed;
+-- SELECT * FROM summary;
